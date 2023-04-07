@@ -8,6 +8,7 @@ from causalscbench.models.training_regimes import TrainingRegime
 from causalscbench.models.utils.model_utils import remove_lowly_expressed_genes
 
 import sys, os
+
 print(sys.path)
 sys.path.append(os.getcwd())
 print(os.getcwd())
@@ -77,6 +78,7 @@ class BetterBoost(AbstractInferenceModel):
             seed=seed,
             early_stop_window_length=15,
             verbose=True,
+            use_interventions=True,
             # tf_names=gene_names[:10]
         )
 
@@ -88,13 +90,17 @@ class BetterBoost(AbstractInferenceModel):
         n_pvalues = network["pvalue"].count()
         network["pvalue_rank"] = range(1, network.shape[0] + 1)
         network["pvalue_rank"] = network["pvalue_rank"] / n_pvalues * 0.05
-        network = network[(network["pvalue"] < network["pvalue_rank"]) | network["pvalue"].isna()]
+        network = network[
+            (network["pvalue"] < network["pvalue_rank"]) | network["pvalue"].isna()
+        ]
 
         n_interventions = len(set(interventions).intersection(gene_names))
         fraction_interactions = n_interventions / len(gene_names)
 
         network_sorted_by_pvalue = network.sort_values("pvalue")
-        network_sorted_by_importance = network.sort_values("importance", ascending=False)
+        network_sorted_by_importance = network.sort_values(
+            "importance", ascending=False
+        )
 
         edges = []
         # maintain a ratio between pvalue and importance
@@ -104,9 +110,9 @@ class BetterBoost(AbstractInferenceModel):
         topk = 20
         limit = 1200
         for i in range(topk):
-            s,t = network_sorted_by_pvalue[["TF", "target"]].values[i]
-            if (s,t) not in edges:
-                edges.append((s,t))
+            s, t = network_sorted_by_pvalue[["TF", "target"]].values[i]
+            if (s, t) not in edges:
+                edges.append((s, t))
             n_pvalue_edges += 1
 
             s, t = network_sorted_by_importance[["TF", "target"]].values[i]
@@ -115,23 +121,25 @@ class BetterBoost(AbstractInferenceModel):
             n_importance_edges += 1
 
         while len(edges) < limit:
-            if n_pvalue_edges / (n_pvalue_edges + n_importance_edges) < fraction_interactions:
+            if (
+                n_pvalue_edges / (n_pvalue_edges + n_importance_edges)
+                < fraction_interactions
+            ):
                 s, t = network_sorted_by_pvalue[["TF", "target"]].values[n_pvalue_edges]
                 if (s, t) not in edges:
                     edges.append((s, t))
                 n_pvalue_edges += 1
             else:
-                s, t = network_sorted_by_importance[["TF", "target"]].values[n_importance_edges]
+                s, t = network_sorted_by_importance[["TF", "target"]].values[
+                    n_importance_edges
+                ]
                 if (s, t) not in edges:
                     edges.append((s, t))
                 n_importance_edges += 1
 
-
         network.to_csv(f"betterboost-{expression_matrix.shape[0]}.csv")
         torch.save(edges, f"betterboost-{expression_matrix.shape[0]}-edges.pt")
         return edges
-
-
 
 
 if __name__ == "__main__":

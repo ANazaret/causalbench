@@ -1,4 +1,3 @@
-
 """
 Core functional building blocks, composed in a Dask graph for distributed computation.
 """
@@ -8,7 +7,11 @@ import pandas as pd
 import logging
 
 import scipy
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, ExtraTreesRegressor
+from sklearn.ensemble import (
+    GradientBoostingRegressor,
+    RandomForestRegressor,
+    ExtraTreesRegressor,
+)
 from dask import delayed
 from dask.dataframe import from_delayed
 from dask.dataframe.utils import make_meta
@@ -83,7 +86,9 @@ def to_tf_matrix(expression_matrix, gene_names, tf_names):
              1: The gene names corresponding to the columns in the predictor matrix.
     """
 
-    tuples = [(index, gene) for index, gene in enumerate(gene_names) if gene in tf_names]
+    tuples = [
+        (index, gene) for index, gene in enumerate(gene_names) if gene in tf_names
+    ]
 
     tf_indices = [t[0] for t in tuples]
     tf_matrix_names = [t[1] for t in tuples]
@@ -96,14 +101,17 @@ def fit_model(
     regressor_kwargs,
     tf_matrix,
     target_gene_expression,
+    interventions,
     early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
     seed=DEMON_SEED,
+    use_interventions=False,
 ):
     """
     :param regressor_type: string. Case insensitive.
     :param regressor_kwargs: a dictionary of key-value pairs that configures the regressor.
     :param tf_matrix: the predictor matrix (transcription factor matrix) as a numpy array.
     :param target_gene_expression: the target (y) gene expression to predict in function of the tf_matrix (X).
+    :param interventions: a list of interventions. Each entry corresponds to the tf_matrix column with same index.
     :param early_stop_window_length: window length of the early stopping monitor.
     :param seed: (optional) random seed for the regressors.
     :return: a trained regression model.
@@ -115,10 +123,14 @@ def fit_model(
 
     assert tf_matrix.shape[0] == target_gene_expression.shape[0]
 
-    def do_sklearn_regression():
-        regressor = SKLEARN_REGRESSOR_FACTORY[regressor_type](random_state=seed, **regressor_kwargs)
+    def do_sklearn_regression(tf_matrix, target_gene_expression):
+        regressor = SKLEARN_REGRESSOR_FACTORY[regressor_type](
+            random_state=seed, **regressor_kwargs
+        )
 
-        with_early_stopping = is_oob_heuristic_supported(regressor_type, regressor_kwargs)
+        with_early_stopping = is_oob_heuristic_supported(
+            regressor_type, regressor_kwargs
+        )
 
         if with_early_stopping:
             regressor.fit(
@@ -132,14 +144,28 @@ def fit_model(
         return regressor
 
     if is_sklearn_regressor(regressor_type):
-        return do_sklearn_regression()
+        if use_interventions:
+            regressors = []
+            for intervention in np.unique(interventions):
+                intervention_idxs = np.where(interventions == intervention)[0]
+                int_tf_matrix = tf_matrix[intervention_idxs, :]
+                int_target_gene_expression = target_gene_expression[intervention_idxs]
+                regressor = do_sklearn_regression(
+                    int_tf_matrix, int_target_gene_expression
+                )
+                regressors.append(regressor)
+            return regressors
+        else:
+            return do_sklearn_regression(tf_matrix, target_gene_expression)
     # elif is_xgboost_regressor(regressor_type):
     #     raise ValueError('XGB regressor not yet supported')
     else:
         raise ValueError("Unsupported regressor type: {0}".format(regressor_type))
 
 
-def to_feature_importances(regressor_type, regressor_kwargs, trained_regressor):
+def to_feature_importances(
+    regressor_type, regressor_kwargs, trained_regressor, use_interventions
+):
     """
     Motivation: when the out-of-bag improvement heuristic is used, we cancel the effect of normalization by dividing
     by the number of trees in the regression ensemble by multiplying again by the number of trees used.
@@ -152,14 +178,27 @@ def to_feature_importances(regressor_type, regressor_kwargs, trained_regressor):
     :return: the feature importances inferred from the trained model.
     """
 
-    if is_oob_heuristic_supported(regressor_type, regressor_kwargs):
-        n_estimators = len(trained_regressor.estimators_)
+    def get_regressor_importances(trained_regressor):
+        if is_oob_heuristic_supported(regressor_type, regressor_kwargs):
+            n_estimators = len(trained_regressor.estimators_)
 
-        denormalized_importances = trained_regressor.feature_importances_ * n_estimators
+            denormalized_importances = (
+                trained_regressor.feature_importances_ * n_estimators
+            )
 
-        return denormalized_importances
+            return denormalized_importances
+        else:
+            return trained_regressor.feature_importances_
+
+    if use_interventions:
+        assert isinstance(trained_regressor, list)
+        importances = np.array(
+            [get_regressor_importances(regressor) for regressor in trained_regressor]
+        )
+        # Can choose an aggregation of choice here
+        return np.min(importances, axis=0)
     else:
-        return trained_regressor.feature_importances_
+        return get_regressor_importances(trained_regressor)
 
 
 def to_meta_df(trained_regressor, target_gene_name):
@@ -174,7 +213,13 @@ def to_meta_df(trained_regressor, target_gene_name):
 
 
 def to_links_df(
-    regressor_type, regressor_kwargs, trained_regressor, tf_matrix_gene_names, target_gene_name, intervention_impact,
+    regressor_type,
+    regressor_kwargs,
+    trained_regressor,
+    tf_matrix_gene_names,
+    target_gene_name,
+    intervention_impact,
+    use_interventions=False,
 ):
     """
     :param regressor_type: string. Case insensitive.
@@ -189,10 +234,12 @@ def to_links_df(
     def pythonic():
         # feature_importances = trained_regressor.feature_importances_
         feature_importances = to_feature_importances(
-            regressor_type, regressor_kwargs, trained_regressor
+            regressor_type, regressor_kwargs, trained_regressor, use_interventions
         )
 
-        links_df = pd.DataFrame({"TF": tf_matrix_gene_names, "importance": feature_importances})
+        links_df = pd.DataFrame(
+            {"TF": tf_matrix_gene_names, "importance": feature_importances}
+        )
         links_df["target"] = target_gene_name
         links_df["pvalue"] = np.nan
         for (gene, pvalue) in intervention_impact:
@@ -226,7 +273,9 @@ def clean(tf_matrix, tf_matrix_gene_names, target_gene_name):
     else:
         ix = tf_matrix_gene_names.index(target_gene_name)
         if isinstance(tf_matrix, scipy.sparse.spmatrix):
-            clean_tf_matrix = scipy.sparse.hstack([tf_matrix[:, :ix], tf_matrix[:, ix + 1 :]])
+            clean_tf_matrix = scipy.sparse.hstack(
+                [tf_matrix[:, :ix], tf_matrix[:, ix + 1 :]]
+            )
         else:
             clean_tf_matrix = np.delete(tf_matrix, ix, 1)
 
@@ -301,6 +350,7 @@ def infer_partial_network(
     include_meta=False,
     early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
     seed=DEMON_SEED,
+    use_interventions=False,
 ):
     """
     Ties together regressor model training with regulatory links and meta data extraction.
@@ -330,7 +380,9 @@ def infer_partial_network(
         )
         # remove observations where the intervention is the target gene
         clean_tf_matrix = clean_tf_matrix[interventions != target_gene_name]
-        clean_target_gene_expression = target_gene_expression[interventions != target_gene_name]
+        clean_target_gene_expression = target_gene_expression[
+            interventions != target_gene_name
+        ]
         clean_interventions = interventions[interventions != target_gene_name]
 
         # special case in which only a single TF is passed and the target gene
@@ -348,10 +400,14 @@ def infer_partial_network(
                 regressor_kwargs,
                 clean_tf_matrix,
                 clean_target_gene_expression,
+                clean_interventions,
                 early_stop_window_length,
                 seed,
+                use_interventions=use_interventions,
             )
-            intervention_impact = compute_intervention_impact(clean_target_gene_expression, clean_interventions, tf_matrix_gene_names)
+            intervention_impact = compute_intervention_impact(
+                clean_target_gene_expression, clean_interventions, tf_matrix_gene_names
+            )
 
         except ValueError as e:
             raise ValueError(
@@ -367,6 +423,7 @@ def infer_partial_network(
             clean_tf_matrix_gene_names,
             target_gene_name,
             intervention_impact,
+            use_interventions=use_interventions,
         )
 
         if include_meta:
@@ -381,7 +438,9 @@ def infer_partial_network(
     return retry(
         fn,
         fallback_result=fallback_result,
-        warning_msg="WARNING: infer_data failed for target {0}".format(target_gene_name),
+        warning_msg="WARNING: infer_data failed for target {0}".format(
+            target_gene_name
+        ),
     )
 
 
@@ -408,7 +467,9 @@ def target_gene_indices(gene_names, target_genes):
         if not target_genes:  # target_genes is empty
             return target_genes
         elif all(isinstance(target_gene, str) for target_gene in target_genes):
-            return [index for index, gene in enumerate(gene_names) if gene in target_genes]
+            return [
+                index for index, gene in enumerate(gene_names) if gene in target_genes
+            ]
         elif all(isinstance(target_gene, int) for target_gene in target_genes):
             return target_genes
         else:
@@ -418,7 +479,9 @@ def target_gene_indices(gene_names, target_genes):
         raise ValueError("Unable to interpret target_genes.")
 
 
-_GRN_SCHEMA = make_meta({"TF": str, "target": str, "importance": float, "pvalue": float})
+_GRN_SCHEMA = make_meta(
+    {"TF": str, "target": str, "importance": float, "pvalue": float}
+)
 _META_SCHEMA = make_meta({"target": str, "n_estimators": int})
 
 
@@ -436,6 +499,7 @@ def create_graph(
     early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
     repartition_multiplier=1,
     seed=DEMON_SEED,
+    use_interventions=False,
 ):
     """
     Main API function. Create a Dask computation graph.
@@ -462,12 +526,16 @@ def create_graph(
     assert expression_matrix.shape[1] == len(gene_names)
     assert client, "client is required"
 
-    tf_matrix, tf_matrix_gene_names = to_tf_matrix(expression_matrix, gene_names, tf_names)
+    tf_matrix, tf_matrix_gene_names = to_tf_matrix(
+        expression_matrix, gene_names, tf_names
+    )
     interventions = np.array(interventions)
 
     future_tf_matrix = client.scatter(tf_matrix, broadcast=True)
     # [1] wrap in a list of 1 -> unsure why but Matt. Rocklin does this often...
-    [future_tf_matrix_gene_names] = client.scatter([tf_matrix_gene_names], broadcast=True)
+    [future_tf_matrix_gene_names] = client.scatter(
+        [tf_matrix_gene_names], broadcast=True
+    )
     [future_interventions] = client.scatter([interventions], broadcast=True)
 
     delayed_link_dfs = []  # collection of delayed link DataFrames
@@ -475,10 +543,14 @@ def create_graph(
 
     for target_gene_index in target_gene_indices(gene_names, target_genes):
         target_gene_name = delayed(gene_names[target_gene_index], pure=True)
-        target_gene_expression = delayed(expression_matrix[:, target_gene_index], pure=True)
+        target_gene_expression = delayed(
+            expression_matrix[:, target_gene_index], pure=True
+        )
 
         if include_meta:
-            delayed_link_df, delayed_meta_df = delayed(infer_partial_network, pure=True, nout=2)(
+            delayed_link_df, delayed_meta_df = delayed(
+                infer_partial_network, pure=True, nout=2
+            )(
                 regressor_type,
                 regressor_kwargs,
                 future_tf_matrix,
@@ -489,6 +561,7 @@ def create_graph(
                 include_meta,
                 early_stop_window_length,
                 seed,
+                use_interventions,
             )
 
             if delayed_link_df is not None:
@@ -526,9 +599,9 @@ def create_graph(
     n_parts = len(client.ncores()) * repartition_multiplier
 
     if include_meta:
-        return maybe_limited_links_df.repartition(npartitions=n_parts), all_meta_df.repartition(
+        return maybe_limited_links_df.repartition(
             npartitions=n_parts
-        )
+        ), all_meta_df.repartition(npartitions=n_parts)
     else:
         return maybe_limited_links_df.repartition(npartitions=n_parts)
 
@@ -587,6 +660,7 @@ def betterboost(
     limit=None,
     seed=None,
     verbose=False,
+    use_interventions=False,
 ):
     """
     Launch arboreto with [BetterBoost] profile.
@@ -621,6 +695,7 @@ def betterboost(
         limit=limit,
         seed=seed,
         verbose=verbose,
+        use_interventions=use_interventions,
     )
 
 
@@ -636,6 +711,7 @@ def diy(
     limit=None,
     seed=None,
     verbose=False,
+    use_interventions=False,
 ):
     """
     :param expression_data: one of:
@@ -684,13 +760,16 @@ def diy(
             early_stop_window_length=early_stop_window_length,
             limit=limit,
             seed=seed,
+            use_interventions=use_interventions,
         )
 
         if verbose:
             print("{} partitions".format(graph.npartitions))
             print("computing dask graph")
 
-        return client.compute(graph, sync=True).sort_values(by="importance", ascending=False)
+        return client.compute(graph, sync=True).sort_values(
+            by="importance", ascending=False
+        )
 
     finally:
         shutdown_callback(verbose)
