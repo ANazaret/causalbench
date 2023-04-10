@@ -826,9 +826,13 @@ def diy(
             seed=seed,
             use_interventions=use_interventions,
         )
+        if use_interventions:
+            npartitions = graph[0].npartitions
+        else:
+            npartitions = graph.npartitions
 
         if verbose:
-            print("{} partitions".format(graph.npartitions))
+            print("{} partitions".format(npartitions))
             print("computing dask graph")
 
         return client.compute(graph, sync=True).sort_values(
