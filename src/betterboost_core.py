@@ -835,6 +835,11 @@ def diy(
             print("{} partitions".format(npartitions))
             print("computing dask graph")
 
+        if use_interventions:
+            network, importances_df = client.compute(graph, sync=True)
+            network = network.sort_values(by="importance", ascending=False)
+            return network, importances_df
+
         return client.compute(graph, sync=True).sort_values(
             by="importance", ascending=False
         )
