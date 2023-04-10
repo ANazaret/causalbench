@@ -104,8 +104,8 @@ class BetterBoost(AbstractInferenceModel):
 
         # take max importance scores from the importances.
         limit = min(1000, network_sorted_by_importance.shape[0])
-        edge_df = network_sorted_by_importance[["TF", "target"]].values[:limit]
-        edges = [(s, t) for s, t in edge_df.iterrows()]
+        edge_mtx = network_sorted_by_importance[["TF", "target"]].values[:limit]
+        edges = [(s, t) for s, t in edge_mtx]
 
         # maintain a ratio between pvalue and importance
         # start with the top k edges of each
