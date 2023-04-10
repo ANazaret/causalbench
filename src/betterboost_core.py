@@ -463,9 +463,7 @@ def infer_partial_network(
         fallback_result = (_GRN_SCHEMA, _META_SCHEMA)
     elif use_interventions:
         importances_meta = (
-            {gene_name: float for gene_name in tf_matrix_gene_names}.update(
-                {"target": str}
-            ),
+            {gene_name: float for gene_name in tf_matrix_gene_names} | {"target": str},
         )
         fallback_result = (_GRN_SCHEMA, importances_meta)
     else:
@@ -645,7 +643,7 @@ def create_graph(
     all_meta_df = from_delayed(delayed_meta_dfs, meta=_META_SCHEMA)
     all_importances_df = from_delayed(
         delayed_importances_dfs,
-        meta={gene_name: float for gene_name in gene_names}.update({"target": str}),
+        meta={gene_name: float for gene_name in gene_names} | {"target": str},
     )
 
     # optionally limit the number of resulting regulatory links, descending by top importance
