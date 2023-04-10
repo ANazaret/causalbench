@@ -573,7 +573,7 @@ def create_graph(
 
         if include_meta:
             delayed_link_df, delayed_importances_df, delayed_meta_df = delayed(
-                infer_partial_network, pure=True, nout=2
+                infer_partial_network, pure=True, nout=3
             )(
                 regressor_type,
                 regressor_kwargs,
@@ -594,7 +594,7 @@ def create_graph(
                 delayed_importances_dfs.append(delayed_importances_df)
         else:
             delayed_link_df, delayed_importances_df = delayed(
-                infer_partial_network, pure=True
+                infer_partial_network, pure=True, nout=2
             )(
                 regressor_type,
                 regressor_kwargs,
