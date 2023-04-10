@@ -70,7 +70,7 @@ class BetterBoost(AbstractInferenceModel):
         # You may want to modify the algo to take into account the perturbation information in the "interventions" input.
         # This may be achieved by directly modifying the algorithm or by modulating the expression matrix that is given as input.
         # change to grnboost3 for the new version
-        network = betterboost(
+        network, importances_df = betterboost(
             expression_data=expression_matrix,
             gene_names=gene_names,
             interventions=interventions,
@@ -140,6 +140,10 @@ class BetterBoost(AbstractInferenceModel):
         #         if (s, t) not in edges:
         #             edges.append((s, t))
         #         n_importance_edges += 1
+
+        importances_df.to_csv(
+            f"output/betterboost-importances-{interventions.shape[0]}.csv"
+        )
 
         network.to_csv(f"output/betterboost-{expression_matrix.shape[0]}.csv")
         torch.save(edges, f"output/betterboost-{expression_matrix.shape[0]}-edges.pt")

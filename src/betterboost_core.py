@@ -205,12 +205,9 @@ def to_feature_importances(
         importances_df = pd.DataFrame(
             importances, columns=tf_matrix_gene_names, index=np.unique(interventions)
         )
-        importances_df.to_csv(
-            f"output/betterboost-importances-{interventions.shape[0]}-{target_gene_name}.csv"
-        )
-        return np.min(importances, axis=0)
+        return np.min(importances, axis=0), importances_df
     else:
-        return get_regressor_importances(trained_regressor)
+        return get_regressor_importances(trained_regressor), None
 
 
 def to_meta_df(trained_regressor, target_gene_name):
@@ -246,7 +243,7 @@ def to_links_df(
 
     def pythonic():
         # feature_importances = trained_regressor.feature_importances_
-        feature_importances = to_feature_importances(
+        feature_importances, importances_df = to_feature_importances(
             regressor_type,
             regressor_kwargs,
             trained_regressor,
@@ -268,7 +265,7 @@ def to_links_df(
             by="importance", ascending=False
         )
 
-        return clean_links_df[["TF", "target", "importance", "pvalue"]]
+        return clean_links_df[["TF", "target", "importance", "pvalue"]], importances_df
 
     if is_sklearn_regressor(regressor_type):
         return pythonic()
@@ -435,7 +432,7 @@ def infer_partial_network(
                 )
             )
 
-        links_df = to_links_df(
+        links_df, importances_df = to_links_df(
             regressor_type,
             regressor_kwargs,
             trained_regressor,
@@ -446,12 +443,18 @@ def infer_partial_network(
             use_interventions=use_interventions,
         )
 
+        # fill in empty columns importances_df
+        missing_gene_columns = set(tf_matrix_gene_names) - set(importances_df.columns)
+        for column in missing_gene_columns:
+            importances_df[column] = np.nan
+        importances_df["target"] = target_gene_name
+
         if include_meta:
             meta_df = to_meta_df(trained_regressor, target_gene_name)
 
-            return links_df, meta_df
+            return links_df, importances_df, meta_df
         else:
-            return links_df
+            return links_df, importances_df
 
     fallback_result = (_GRN_SCHEMA, _META_SCHEMA) if include_meta else _GRN_SCHEMA
 
@@ -560,6 +563,7 @@ def create_graph(
 
     delayed_link_dfs = []  # collection of delayed link DataFrames
     delayed_meta_dfs = []  # collection of delayed meta DataFrame
+    delayed_importances_dfs = []  # collection of delayed importances DataFrame
 
     for target_gene_index in target_gene_indices(gene_names, target_genes):
         target_gene_name = delayed(gene_names[target_gene_index], pure=True)
@@ -568,7 +572,7 @@ def create_graph(
         )
 
         if include_meta:
-            delayed_link_df, delayed_meta_df = delayed(
+            delayed_link_df, delayed_importances_df, delayed_meta_df = delayed(
                 infer_partial_network, pure=True, nout=2
             )(
                 regressor_type,
@@ -587,8 +591,11 @@ def create_graph(
             if delayed_link_df is not None:
                 delayed_link_dfs.append(delayed_link_df)
                 delayed_meta_dfs.append(delayed_meta_df)
+                delayed_importances_dfs.append(delayed_importances_df)
         else:
-            delayed_link_df = delayed(infer_partial_network, pure=True)(
+            delayed_link_df, delayed_importances_df = delayed(
+                infer_partial_network, pure=True
+            )(
                 regressor_type,
                 regressor_kwargs,
                 future_tf_matrix,
@@ -603,10 +610,15 @@ def create_graph(
 
             if delayed_link_df is not None:
                 delayed_link_dfs.append(delayed_link_df)
+                delayed_importances_dfs.append(delayed_importances_df)
 
     # gather the DataFrames into one distributed DataFrame
     all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
     all_meta_df = from_delayed(delayed_meta_dfs, meta=_META_SCHEMA)
+    all_importances_df = from_delayed(
+        delayed_importances_dfs,
+        meta={gene_name: float for gene_name in gene_names}.update({"target": str}),
+    )
 
     # optionally limit the number of resulting regulatory links, descending by top importance
     if limit:
@@ -619,11 +631,15 @@ def create_graph(
     n_parts = len(client.ncores()) * repartition_multiplier
 
     if include_meta:
+        return (
+            maybe_limited_links_df.repartition(npartitions=n_parts),
+            all_importances_df.repartition(npartitions=n_parts),
+            all_meta_df.repartition(npartitions=n_parts),
+        )
+    else:
         return maybe_limited_links_df.repartition(
             npartitions=n_parts
-        ), all_meta_df.repartition(npartitions=n_parts)
-    else:
-        return maybe_limited_links_df.repartition(npartitions=n_parts)
+        ), all_importances_df.repartition(npartitions=n_parts)
 
 
 class EarlyStopMonitor:
