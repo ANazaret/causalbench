@@ -168,7 +168,6 @@ def to_feature_importances(
     regressor_kwargs,
     trained_regressor,
     tf_matrix_gene_names,
-    target_gene_name,
     interventions,
     use_interventions,
 ):
@@ -248,7 +247,6 @@ def to_links_df(
             regressor_kwargs,
             trained_regressor,
             tf_matrix_gene_names,
-            target_gene_name,
             interventions,
             use_interventions,
         )
@@ -444,19 +442,34 @@ def infer_partial_network(
         )
 
         # fill in empty columns importances_df
-        missing_gene_columns = set(tf_matrix_gene_names) - set(importances_df.columns)
-        for column in missing_gene_columns:
-            importances_df[column] = np.nan
-        importances_df["target"] = target_gene_name
+        if importances_df is not None:
+            missing_gene_columns = set(tf_matrix_gene_names) - set(
+                importances_df.columns
+            )
+            for column in missing_gene_columns:
+                importances_df[column] = np.nan
+            importances_df["target"] = target_gene_name
 
         if include_meta:
             meta_df = to_meta_df(trained_regressor, target_gene_name)
 
-            return links_df, importances_df, meta_df
-        else:
+            return links_df, meta_df
+        elif use_interventions:
             return links_df, importances_df
+        else:
+            return links_df
 
-    fallback_result = (_GRN_SCHEMA, _META_SCHEMA) if include_meta else _GRN_SCHEMA
+    if include_meta:
+        fallback_result = (_GRN_SCHEMA, _META_SCHEMA)
+    elif use_interventions:
+        importances_meta = (
+            {gene_name: float for gene_name in tf_matrix_gene_names}.update(
+                {"target": str}
+            ),
+        )
+        fallback_result = (_GRN_SCHEMA, importances_meta)
+    else:
+        fallback_result = _GRN_SCHEMA
 
     return retry(
         fn,
@@ -572,8 +585,8 @@ def create_graph(
         )
 
         if include_meta:
-            delayed_link_df, delayed_importances_df, delayed_meta_df = delayed(
-                infer_partial_network, pure=True, nout=3
+            delayed_link_df, delayed_meta_df = delayed(
+                infer_partial_network, pure=True, nout=2
             )(
                 regressor_type,
                 regressor_kwargs,
@@ -592,7 +605,7 @@ def create_graph(
                 delayed_link_dfs.append(delayed_link_df)
                 delayed_meta_dfs.append(delayed_meta_df)
                 delayed_importances_dfs.append(delayed_importances_df)
-        else:
+        elif use_interventions:
             delayed_link_df, delayed_importances_df = delayed(
                 infer_partial_network, pure=True, nout=2
             )(
@@ -611,6 +624,22 @@ def create_graph(
             if delayed_link_df is not None:
                 delayed_link_dfs.append(delayed_link_df)
                 delayed_importances_dfs.append(delayed_importances_df)
+        else:
+            delayed_link_df = delayed(infer_partial_network, pure=True)(
+                regressor_type,
+                regressor_kwargs,
+                future_tf_matrix,
+                future_tf_matrix_gene_names,
+                target_gene_name,
+                target_gene_expression,
+                future_interventions,
+                include_meta,
+                early_stop_window_length,
+                seed,
+            )
+
+            if delayed_link_df is not None:
+                delayed_link_dfs.append(delayed_link_df)
 
     # gather the DataFrames into one distributed DataFrame
     all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
