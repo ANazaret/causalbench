@@ -102,43 +102,47 @@ class BetterBoost(AbstractInferenceModel):
             "importance", ascending=False
         )
 
-        edges = []
+        # take max importance scores from the importances.
+        limit = min(1000, network_sorted_by_importance.shape[0])
+        edge_df = network_sorted_by_importance[["TF", "target"]].values[:limit]
+        edges = [(s, t) for s, t in edge_df.iterrows()]
+
         # maintain a ratio between pvalue and importance
         # start with the top k edges of each
-        n_pvalue_edges = 0
-        n_importance_edges = 0
-        topk = 20
-        limit = 1200
-        for i in range(topk):
-            s, t = network_sorted_by_pvalue[["TF", "target"]].values[i]
-            if (s, t) not in edges:
-                edges.append((s, t))
-            n_pvalue_edges += 1
+        # n_pvalue_edges = 0
+        # n_importance_edges = 0
+        # topk = 20
+        # limit = min(1000, network_sorted_by_pvalue.shape[0])
+        # for i in range(topk):
+        #     s, t = network_sorted_by_pvalue[["TF", "target"]].values[i]
+        #     if (s, t) not in edges:
+        #         edges.append((s, t))
+        #     n_pvalue_edges += 1
 
-            s, t = network_sorted_by_importance[["TF", "target"]].values[i]
-            if (s, t) not in edges:
-                edges.append((s, t))
-            n_importance_edges += 1
+        #     s, t = network_sorted_by_importance[["TF", "target"]].values[i]
+        #     if (s, t) not in edges:
+        #         edges.append((s, t))
+        #     n_importance_edges += 1
 
-        while len(edges) < limit:
-            if (
-                n_pvalue_edges / (n_pvalue_edges + n_importance_edges)
-                < fraction_interactions
-            ):
-                s, t = network_sorted_by_pvalue[["TF", "target"]].values[n_pvalue_edges]
-                if (s, t) not in edges:
-                    edges.append((s, t))
-                n_pvalue_edges += 1
-            else:
-                s, t = network_sorted_by_importance[["TF", "target"]].values[
-                    n_importance_edges
-                ]
-                if (s, t) not in edges:
-                    edges.append((s, t))
-                n_importance_edges += 1
+        # while len(edges) < limit:
+        #     if (
+        #         n_pvalue_edges / (n_pvalue_edges + n_importance_edges)
+        #         < fraction_interactions
+        #     ):
+        #         s, t = network_sorted_by_pvalue[["TF", "target"]].values[n_pvalue_edges]
+        #         if (s, t) not in edges:
+        #             edges.append((s, t))
+        #         n_pvalue_edges += 1
+        #     else:
+        #         s, t = network_sorted_by_importance[["TF", "target"]].values[
+        #             n_importance_edges
+        #         ]
+        #         if (s, t) not in edges:
+        #             edges.append((s, t))
+        #         n_importance_edges += 1
 
-        network.to_csv(f"betterboost-{expression_matrix.shape[0]}.csv")
-        torch.save(edges, f"betterboost-{expression_matrix.shape[0]}-edges.pt")
+        network.to_csv(f"output/betterboost-{expression_matrix.shape[0]}.csv")
+        torch.save(edges, f"output/betterboost-{expression_matrix.shape[0]}-edges.pt")
         return edges
 
 

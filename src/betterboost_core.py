@@ -164,7 +164,13 @@ def fit_model(
 
 
 def to_feature_importances(
-    regressor_type, regressor_kwargs, trained_regressor, use_interventions
+    regressor_type,
+    regressor_kwargs,
+    trained_regressor,
+    tf_matrix_gene_names,
+    target_gene_name,
+    interventions,
+    use_interventions,
 ):
     """
     Motivation: when the out-of-bag improvement heuristic is used, we cancel the effect of normalization by dividing
@@ -196,6 +202,12 @@ def to_feature_importances(
             [get_regressor_importances(regressor) for regressor in trained_regressor]
         )
         # Can choose an aggregation of choice here
+        importances_df = pd.DataFrame(
+            importances, columns=tf_matrix_gene_names, index=np.unique(interventions)
+        )
+        importances_df.to_csv(
+            f"output/betterboost-importances-{interventions.shape[0]}-{target_gene_name}.csv"
+        )
         return np.min(importances, axis=0)
     else:
         return get_regressor_importances(trained_regressor)
@@ -219,6 +231,7 @@ def to_links_df(
     tf_matrix_gene_names,
     target_gene_name,
     intervention_impact,
+    interventions=None,
     use_interventions=False,
 ):
     """
@@ -234,7 +247,13 @@ def to_links_df(
     def pythonic():
         # feature_importances = trained_regressor.feature_importances_
         feature_importances = to_feature_importances(
-            regressor_type, regressor_kwargs, trained_regressor, use_interventions
+            regressor_type,
+            regressor_kwargs,
+            trained_regressor,
+            tf_matrix_gene_names,
+            target_gene_name,
+            interventions,
+            use_interventions,
         )
 
         links_df = pd.DataFrame(
@@ -423,6 +442,7 @@ def infer_partial_network(
             clean_tf_matrix_gene_names,
             target_gene_name,
             intervention_impact,
+            interventions=interventions,
             use_interventions=use_interventions,
         )
 
