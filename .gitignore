@@ -2,5 +2,6 @@
 .DS_Store
 *.pyc
 output/
+outputsubset/
 data/
 plots/

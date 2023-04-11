@@ -96,7 +96,7 @@ class BestBoost(AbstractInferenceModel):
         edges = [(s, t) for s, t in edge_mtx]
 
         importances_df.to_csv(
-            f"output/bestboost-importances-{interventions.shape[0]}.csv"
+            f"output/bestboost-importances-{n_interventions}.csv"
         )
 
         network.to_csv(f"output/bestboost-{n_interventions}.csv")
