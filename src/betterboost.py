@@ -70,7 +70,7 @@ class BetterBoost(AbstractInferenceModel):
         # You may want to modify the algo to take into account the perturbation information in the "interventions" input.
         # This may be achieved by directly modifying the algorithm or by modulating the expression matrix that is given as input.
         # change to grnboost3 for the new version
-        network, _ = betterboost(
+        network = betterboost(
             expression_data=expression_matrix,
             gene_names=gene_names,
             interventions=interventions,

@@ -449,6 +449,9 @@ def infer_partial_network(
             for column in missing_gene_columns:
                 importances_df[column] = np.nan
             importances_df["target"] = target_gene_name
+            # reorder to match meta
+            column_order = tf_matrix_gene_names + ["target"]
+            importances_df = importances_df[column_order]
 
         if include_meta:
             meta_df = to_meta_df(trained_regressor, target_gene_name)
@@ -462,8 +465,8 @@ def infer_partial_network(
     if include_meta:
         fallback_result = (_GRN_SCHEMA, _META_SCHEMA)
     elif use_interventions:
-        importances_meta = (
-            {gene_name: float for gene_name in tf_matrix_gene_names} | {"target": str},
+        importances_meta = make_meta(
+                {gene_name: float for gene_name in tf_matrix_gene_names} | {"target": str},
         )
         fallback_result = (_GRN_SCHEMA, importances_meta)
     else:
@@ -616,7 +619,8 @@ def create_graph(
                 include_meta,
                 early_stop_window_length,
                 seed,
-            )
+                use_interventions,
+                )
 
             if delayed_link_df is not None:
                 delayed_link_dfs.append(delayed_link_df)
@@ -642,8 +646,8 @@ def create_graph(
     all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
     all_meta_df = from_delayed(delayed_meta_dfs, meta=_META_SCHEMA)
     all_importances_df = from_delayed(
-        delayed_importances_dfs,
-        meta={gene_name: float for gene_name in gene_names} | {"target": str},
+            delayed_importances_dfs,
+            meta=make_meta({gene: float for gene in tf_matrix_gene_names} | {"target": str}),
     )
 
     # optionally limit the number of resulting regulatory links, descending by top importance
@@ -825,10 +829,9 @@ def diy(
             limit=limit,
             seed=seed,
             use_interventions=use_interventions,
-        )
+            )
         if use_interventions:
             npartitions = graph[0].npartitions
-            print(interventions)
         else:
             npartitions = graph.npartitions
 
@@ -837,7 +840,11 @@ def diy(
             print("computing dask graph")
 
         if use_interventions:
-            network, importances_df = client.compute(graph, sync=True)
+            network_graph, importances_graph = graph
+            a, b = client.persist([network_graph, importances_graph])
+            network = a.compute(sync=True)
+            importances_df = b.compute(sync=True)
+
             network = network.sort_values(by="importance", ascending=False)
             return network, importances_df
 
