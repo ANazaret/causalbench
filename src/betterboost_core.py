@@ -828,6 +828,7 @@ def diy(
         )
         if use_interventions:
             npartitions = graph[0].npartitions
+            print(interventions)
         else:
             npartitions = graph.npartitions
 

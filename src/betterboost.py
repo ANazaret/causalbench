@@ -70,7 +70,7 @@ class BetterBoost(AbstractInferenceModel):
         # You may want to modify the algo to take into account the perturbation information in the "interventions" input.
         # This may be achieved by directly modifying the algorithm or by modulating the expression matrix that is given as input.
         # change to grnboost3 for the new version
-        network, importances_df = betterboost(
+        network, _ = betterboost(
             expression_data=expression_matrix,
             gene_names=gene_names,
             interventions=interventions,
@@ -78,7 +78,7 @@ class BetterBoost(AbstractInferenceModel):
             seed=seed,
             early_stop_window_length=15,
             verbose=True,
-            use_interventions=True,
+            use_interventions=False,
             # tf_names=gene_names[:10]
         )
 
@@ -104,49 +104,44 @@ class BetterBoost(AbstractInferenceModel):
 
         # take max importance scores from the importances.
         limit = min(1000, network_sorted_by_importance.shape[0])
-        edge_mtx = network_sorted_by_importance[["TF", "target"]].values[:limit]
-        edges = [(s, t) for s, t in edge_mtx]
+        edges = []
 
         # maintain a ratio between pvalue and importance
         # start with the top k edges of each
-        # n_pvalue_edges = 0
-        # n_importance_edges = 0
-        # topk = 20
-        # limit = min(1000, network_sorted_by_pvalue.shape[0])
-        # for i in range(topk):
-        #     s, t = network_sorted_by_pvalue[["TF", "target"]].values[i]
-        #     if (s, t) not in edges:
-        #         edges.append((s, t))
-        #     n_pvalue_edges += 1
+        n_pvalue_edges = 0
+        n_importance_edges = 0
+        topk = 20
+        limit = min(1000, network_sorted_by_pvalue.shape[0])
+        for i in range(topk):
+            s, t = network_sorted_by_pvalue[["TF", "target"]].values[i]
+            if (s, t) not in edges:
+                edges.append((s, t))
+            n_pvalue_edges += 1
 
-        #     s, t = network_sorted_by_importance[["TF", "target"]].values[i]
-        #     if (s, t) not in edges:
-        #         edges.append((s, t))
-        #     n_importance_edges += 1
+            s, t = network_sorted_by_importance[["TF", "target"]].values[i]
+            if (s, t) not in edges:
+                edges.append((s, t))
+            n_importance_edges += 1
 
-        # while len(edges) < limit:
-        #     if (
-        #         n_pvalue_edges / (n_pvalue_edges + n_importance_edges)
-        #         < fraction_interactions
-        #     ):
-        #         s, t = network_sorted_by_pvalue[["TF", "target"]].values[n_pvalue_edges]
-        #         if (s, t) not in edges:
-        #             edges.append((s, t))
-        #         n_pvalue_edges += 1
-        #     else:
-        #         s, t = network_sorted_by_importance[["TF", "target"]].values[
-        #             n_importance_edges
-        #         ]
-        #         if (s, t) not in edges:
-        #             edges.append((s, t))
-        #         n_importance_edges += 1
+        while len(edges) < limit:
+            if (
+                n_pvalue_edges / (n_pvalue_edges + n_importance_edges)
+                < fraction_interactions
+            ):
+                s, t = network_sorted_by_pvalue[["TF", "target"]].values[n_pvalue_edges]
+                if (s, t) not in edges:
+                    edges.append((s, t))
+                n_pvalue_edges += 1
+            else:
+                s, t = network_sorted_by_importance[["TF", "target"]].values[
+                    n_importance_edges
+                ]
+                if (s, t) not in edges:
+                    edges.append((s, t))
+                n_importance_edges += 1
 
-        importances_df.to_csv(
-            f"output/betterboost-importances-{interventions.shape[0]}.csv"
-        )
-
-        network.to_csv(f"output/betterboost-{expression_matrix.shape[0]}.csv")
-        torch.save(edges, f"output/betterboost-{expression_matrix.shape[0]}-edges.pt")
+        network.to_csv(f"output/betterboost-{n_interventions}.csv")
+        torch.save(edges, f"output/betterboost-{n_interventions}-edges.pt")
         return edges
 
 
