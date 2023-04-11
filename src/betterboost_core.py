@@ -437,7 +437,7 @@ def infer_partial_network(
             clean_tf_matrix_gene_names,
             target_gene_name,
             intervention_impact,
-            interventions=interventions,
+            interventions=clean_interventions,
             use_interventions=use_interventions,
         )
 
@@ -449,8 +449,10 @@ def infer_partial_network(
             for column in missing_gene_columns:
                 importances_df[column] = np.nan
             importances_df["target"] = target_gene_name
+            importances_df.index.name = "intervention"
+            importances_df.reset_index(inplace=True)
             # reorder to match meta
-            column_order = tf_matrix_gene_names + ["target"]
+            column_order = tf_matrix_gene_names + ["target", "intervention"]
             importances_df = importances_df[column_order]
 
         if include_meta:
@@ -466,7 +468,8 @@ def infer_partial_network(
         fallback_result = (_GRN_SCHEMA, _META_SCHEMA)
     elif use_interventions:
         importances_meta = make_meta(
-                {gene_name: float for gene_name in tf_matrix_gene_names} | {"target": str},
+            {gene_name: float for gene_name in tf_matrix_gene_names}
+            | {"target": str, "intervention": str},
         )
         fallback_result = (_GRN_SCHEMA, importances_meta)
     else:
@@ -620,7 +623,7 @@ def create_graph(
                 early_stop_window_length,
                 seed,
                 use_interventions,
-                )
+            )
 
             if delayed_link_df is not None:
                 delayed_link_dfs.append(delayed_link_df)
@@ -646,8 +649,11 @@ def create_graph(
     all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
     all_meta_df = from_delayed(delayed_meta_dfs, meta=_META_SCHEMA)
     all_importances_df = from_delayed(
-            delayed_importances_dfs,
-            meta=make_meta({gene: float for gene in tf_matrix_gene_names} | {"target": str}),
+        delayed_importances_dfs,
+        meta=make_meta(
+            {gene: float for gene in tf_matrix_gene_names}
+            | {"target": str, "intervention": str}
+        ),
     )
 
     # optionally limit the number of resulting regulatory links, descending by top importance
@@ -829,7 +835,7 @@ def diy(
             limit=limit,
             seed=seed,
             use_interventions=use_interventions,
-            )
+        )
         if use_interventions:
             npartitions = graph[0].npartitions
         else:
