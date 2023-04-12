@@ -419,9 +419,11 @@ def infer_partial_network(
                 seed,
                 use_interventions=use_interventions,
             )
-            intervention_impact = compute_intervention_impact(
-                clean_target_gene_expression, clean_interventions, tf_matrix_gene_names
-            )
+            intervention_impact = []
+            if not use_interventions:
+                intervention_impact = compute_intervention_impact(
+                    clean_target_gene_expression, clean_interventions, tf_matrix_gene_names
+                )
 
         except ValueError as e:
             raise ValueError(
