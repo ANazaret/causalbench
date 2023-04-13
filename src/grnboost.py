@@ -73,11 +73,14 @@ class GRNBoost(AbstractInferenceModel):
             early_stop_window_length=15,
             verbose=True,
         )
+        network_sorted_by_importance = network.sort_values("importance", ascending=False)
+        limit = min(1000, network_sorted_by_importance.shape[0])
+
 
         n_interventions = len(set(interventions).intersection(gene_names))
         network.to_csv(f"output/grn-{n_interventions}.csv")
 
         # You may want to postprocess the output network to select the edges with stronger expected causal effects.
-        edges = [(i, j) for i, j in network[["TF", "target"]].values]
+        edges = [(i, j) for i, j in network_sorted_by_importance[["TF", "target"]].values[:limit]]
         torch.save(edges, f"output/grn-{n_interventions}-edges.pt")
         return edges

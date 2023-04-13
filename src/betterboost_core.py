@@ -45,6 +45,8 @@ SGBM_KWARGS = {
     "subsample": 0.9,
 }
 
+BESTBOOST_QUANTILE = 0.3
+
 
 def is_sklearn_regressor(regressor_type):
     """
@@ -204,7 +206,7 @@ def to_feature_importances(
             importances, columns=tf_matrix_gene_names, index=np.unique(interventions)
         )
         # Can choose an aggregation of choice here
-        return np.min(importances, axis=0), importances_df
+        return np.quantile(importances, BESTBOOST_QUANTILE, axis=0), importances_df
     else:
         return get_regressor_importances(trained_regressor), None
 
