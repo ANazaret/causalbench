@@ -17,8 +17,8 @@ from src.betterboost_core import betterboost
 class BetterBoost(AbstractInferenceModel):
     def __init__(self) -> None:
         super().__init__()
-        self.n_workers = 40
-        self.threads_per_worker = 3
+        self.n_workers = 20
+        self.threads_per_worker = 4
         self.gene_expression_threshold = 0.15
 
     def __call__(
@@ -55,20 +55,9 @@ class BetterBoost(AbstractInferenceModel):
         )
         custom_client = distributed.Client(local_cluster)
 
-        # # encode each intervention label into a one-hot vector
-        # import pandas as pd
-        # interventions_dummy = pd.get_dummies(interventions)
-        # # add suffix _intervention to each column
-        # interventions_dummy.columns = [str(col) + "_intervention" for col in interventions_dummy.columns]
-        # # add the one-hot vectors to the expression matrix
-        # expression_matrix = np.concatenate((expression_matrix, interventions_dummy.values), axis=1)
-        # # add the intervention labels to the gene names
-        # gene_names = gene_names + list(interventions_dummy.columns)
-
         # The GRNBoost algo was tailored for only observational data.
         # You may want to modify the algo to take into account the perturbation information in the "interventions" input.
         # This may be achieved by directly modifying the algorithm or by modulating the expression matrix that is given as input.
-        # change to grnboost3 for the new version
         network = betterboost(
             expression_data=expression_matrix,
             gene_names=gene_names,
@@ -80,9 +69,7 @@ class BetterBoost(AbstractInferenceModel):
             # tf_names=gene_names[:10]
         )
 
-        # You may want to postprocess the output network to select the edges with stronger expected causal effects.
-        import pandas as pd
-
+        # we adapted GRNBoost to use interventional data
         network = network.sort_values("pvalue")
         # remove pvalues that are above the benjamini-hochberg threshold
         n_pvalues = network["pvalue"].count()
@@ -96,8 +83,6 @@ class BetterBoost(AbstractInferenceModel):
         edges = network_sorted_by_pvalue_importance[["TF", "target"]].values[0:1000]
         edges = [tuple(edge) for edge in edges]
         return edges
-
-
 
 
 if __name__ == "__main__":
