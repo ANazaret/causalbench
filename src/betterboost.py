@@ -17,8 +17,8 @@ from src.betterboost_core import betterboost
 class BetterBoost(AbstractInferenceModel):
     def __init__(self) -> None:
         super().__init__()
-        self.n_workers = 8
-        self.threads_per_worker = 2
+        self.n_workers = 40
+        self.threads_per_worker = 3
         self.gene_expression_threshold = 0.15
 
     def __call__(
@@ -90,45 +90,11 @@ class BetterBoost(AbstractInferenceModel):
         network["pvalue_rank"] = network["pvalue_rank"] / n_pvalues * 0.05
         network = network[(network["pvalue"] < network["pvalue_rank"]) | network["pvalue"].isna()]
 
-        n_interventions = len(set(interventions).intersection(gene_names))
-        fraction_interactions = n_interventions / len(gene_names)
+        network_sorted_by_pvalue_importance = network.sort_values(["pvalue", "importance"], ascending=[True, False])
 
-        network_sorted_by_pvalue = network.sort_values("pvalue")
-        network_sorted_by_importance = network.sort_values("importance", ascending=False)
-
-        edges = []
-        # maintain a ratio between pvalue and importance
-        # start with the top k edges of each
-        n_pvalue_edges = 0
-        n_importance_edges = 0
-        topk = 20
-        limit = 1200
-        for i in range(topk):
-            s,t = network_sorted_by_pvalue[["TF", "target"]].values[i]
-            if (s,t) not in edges:
-                edges.append((s,t))
-            n_pvalue_edges += 1
-
-            s, t = network_sorted_by_importance[["TF", "target"]].values[i]
-            if (s, t) not in edges:
-                edges.append((s, t))
-            n_importance_edges += 1
-
-        while len(edges) < limit:
-            if n_pvalue_edges / (n_pvalue_edges + n_importance_edges) < fraction_interactions:
-                s, t = network_sorted_by_pvalue[["TF", "target"]].values[n_pvalue_edges]
-                if (s, t) not in edges:
-                    edges.append((s, t))
-                n_pvalue_edges += 1
-            else:
-                s, t = network_sorted_by_importance[["TF", "target"]].values[n_importance_edges]
-                if (s, t) not in edges:
-                    edges.append((s, t))
-                n_importance_edges += 1
-
-
-        network.to_csv(f"betterboost-{expression_matrix.shape[0]}.csv")
-        torch.save(edges, f"betterboost-{expression_matrix.shape[0]}-edges.pt")
+        # get top 1000 edges
+        edges = network_sorted_by_pvalue_importance[["TF", "target"]].values[0:1000]
+        edges = [tuple(edge) for edge in edges]
         return edges
 
 
@@ -138,7 +104,7 @@ if __name__ == "__main__":
     # load data
     # filter
     n_genes = 100
-    n_obs = 10000
+    n_obs = 1000
     data = torch.load("../rpe1-25.pt")
     expression_matrix = data["expression_matrix"][0:n_obs, 0:n_genes]
     interventions = data["interventions"][0:n_obs]

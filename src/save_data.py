@@ -33,5 +33,5 @@ class GRNBoost(AbstractInferenceModel):
         training_regime: TrainingRegime,
         seed: int = 0,
     ) -> List[Tuple]:
-        torch.save({"expression_matrix": expression_matrix, "interventions": interventions, "gene_names": gene_names}, "rpe1-25.pt")
+        torch.save({"expression_matrix": expression_matrix, "interventions": interventions, "gene_names": gene_names}, "k562-100.pt")
         return []
