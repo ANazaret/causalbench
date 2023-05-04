@@ -1,3 +1,12 @@
+# Winning solution of the CausalBench ICLR-23 Challenge
+(Forked from the [CausalBench ICLR-23 Challenge Starter Repository](https://github.com/causalbench/causalbench-starter))
+
+The proposed method, *BetterBoost*, adapts the GRNBoost algorithm to take into account intervention data when ranking gene-gene interactions.
+The code is an adaptation of GRN Boost implementation of the [*arboreto* package](https://github.com/aertslab/arboreto).
+
+The BetterBoost code is contained in `src/betterboost_core.py` and an example using it is given in `src/betterboost.py`.
+
+
 # CausalBench ICLR-23 Challenge Starter Repository
 
 ![Python version](https://img.shields.io/badge/Python-3.8-blue)
